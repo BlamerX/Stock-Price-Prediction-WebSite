@@ -59,7 +59,7 @@ price_difference = latest_price - previous_price
 percentage_change = (price_difference / previous_price) * 100
 
 # Display the stock price and the increase as a fancy number
-st.metric("Current Price", f"${latest_price:.2f}", f"+{price_difference:.2f} (+{percentage_change:.2f}%)")
+st.metric("Current Price", f"${latest_price:.2f}", f"{price_difference:.2f} ({percentage_change:.2f}%)")
 
 pricing_data,news,predictions=st.tabs(["Pricing Data",f"Top {no_of_news} News", "Predictions"])
 
