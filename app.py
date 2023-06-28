@@ -11,9 +11,7 @@ from sklearn.linear_model import LinearRegression
 st.title('Stock Price Prediction')
 st.sidebar.header('BlamerX')
 
-tickers=['ETH-USD', 'TSLA', 'AAPL', 'GOOGL', 'MSFT', 'RELIANCE.NS', 'HDFCBANK.NS', 'INFY.NS']
-
-ticker_symbol = st.sidebar.selectbox('Enter a Stock Ticker', tickers)
+ticker_symbol = st.sidebar.text_input('Enter a Stock Ticker', 'SBIN.NS')
 
 start = '2010-01-01'
 end = date.today().strftime("%Y-%m-%d")
