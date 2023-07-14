@@ -5,4 +5,3 @@ stocknews==0.9.11
 streamlit==1.23.1
 yfinance==0.2.20
 scikit-learn==1.0.2
-python==3.9
