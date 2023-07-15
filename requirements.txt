@@ -1,8 +1,8 @@
-matplotlib==3.5.3
-pandas==1.3.5
-plotly==5.15.0
-stocknews==0.9.11
-streamlit==1.23.1
-yfinance==0.2.20
-scikit-learn==1.0.2
-gunicorn==19.7.1
+matplotlib
+pandas
+plotly
+stocknews
+streamlit
+yfinance
+scikit-learn
+mpl-finance
