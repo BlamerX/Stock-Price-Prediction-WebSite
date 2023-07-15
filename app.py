@@ -11,7 +11,7 @@ from sklearn.linear_model import LinearRegression
 st.title('Stock Price Prediction')
 st.sidebar.header('BlamerX')
 
-ticker_symbol = st.sidebar.text_input('Enter a Stock Ticker', 'SBIN.NS')
+ticker_symbol = st.sidebar.text_input('Enter a Stock Ticker', 'TSLA')
 
 start = '2010-01-01'
 end = date.today().strftime("%Y-%m-%d")
@@ -93,7 +93,7 @@ with news:
 with predictions:
     st.header("Predictions")
 
-    no_of_weeks = st.slider("No of Weeks you want to use for prediction", 1, 50, 12)
+    no_of_weeks = st.slider("No of Weeks you want to use for prediction", 1, 10, 2)
     prediction_data = data[['Open', 'High', 'Low', 'Close']].tail(no_of_weeks * 7)  # Last n weeks of data (assuming 5 trading days in a week)
     prediction_dates = pd.date_range(prediction_data.index[-1], periods=200, freq='B')  # Business days for prediction
     prediction_dates_ord = prediction_dates.to_series().apply(lambda x: x.toordinal())
@@ -105,7 +105,7 @@ with predictions:
     reg.fit(X, y)
 
     # Predict for the next n days
-    no_days_prediction = st.slider("No of Future Predictions", 1, 25, 5)
+    no_days_prediction = st.slider("No of Future Predictions", 1, 5, 3)
     future_dates = pd.date_range(end_date, periods=no_days_prediction)
     future_dates_ord = future_dates.to_series().apply(lambda x: x.toordinal())
     future_prices = reg.predict(future_dates_ord.values.reshape(-1, 1))
