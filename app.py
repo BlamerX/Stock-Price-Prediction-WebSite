@@ -785,7 +785,7 @@ with tab3:
     with g2[2]: patience = st.slider("Early stop patience", 3, 20, 7, 1)
 
     # ============================================
-    #  SPLIT BAR — PURE HTML/CSS (no Plotly)
+    #  SPLIT BAR — PURE HTML/CSS
     # ============================================
     total_rows = len(data) - 1
     tr_live = int(total_rows * split_pct / 100)
@@ -800,6 +800,66 @@ with tab3:
         </div>
         <div class="test" style="width: {te_width}%;">
             Test · {te_live:,} rows ({te_width}%)
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ============================================
+    #  PRE-TRAINING CONFIG SUMMARY
+    # ============================================
+    seq_len = lookback
+    n_features = 1
+
+    st.markdown(f"""
+    <div style="background:{P['surface']}; border:1px solid {P['border']};
+                border-radius:10px; padding:16px 20px; margin: 8px 0 16px 0;">
+        <div style="color:{P['text_dim']}; font-size:0.72rem;
+                    font-weight:700; letter-spacing:0.8px;
+                    text-transform:uppercase; margin-bottom:12px;">
+            Model ready to train
+        </div>
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <span style="background:{P['surface2']}; color:{P['text']};
+                         padding:6px 12px; border-radius:20px;
+                         font-size:0.82rem; font-weight:600;
+                         border:1px solid {P['border']};">
+                🧠 LSTM({units})
+            </span>
+            <span style="background:{P['surface2']}; color:{P['text']};
+                         padding:6px 12px; border-radius:20px;
+                         font-size:0.82rem; font-weight:600;
+                         border:1px solid {P['border']};">
+                🎲 Dropout {dropout}
+            </span>
+            <span style="background:{P['surface2']}; color:{P['text']};
+                         padding:6px 12px; border-radius:20px;
+                         font-size:0.82rem; font-weight:600;
+                         border:1px solid {P['border']};">
+                📐 Input ({seq_len}, {n_features})
+            </span>
+            <span style="background:{P['surface2']}; color:{P['text']};
+                         padding:6px 12px; border-radius:20px;
+                         font-size:0.82rem; font-weight:600;
+                         border:1px solid {P['border']};">
+                ⚙️ Adam · lr={lr}
+            </span>
+            <span style="background:{P['surface2']}; color:{P['text']};
+                         padding:6px 12px; border-radius:20px;
+                         font-size:0.82rem; font-weight:600;
+                         border:1px solid {P['border']};">
+                📦 Batch {batch}
+            </span>
+            <span style="background:{P['surface2']}; color:{P['text']};
+                         padding:6px 12px; border-radius:20px;
+                         font-size:0.82rem; font-weight:600;
+                         border:1px solid {P['border']};">
+                🎯 EarlyStop patience={patience}
+            </span>
+        </div>
+        <div style="color:{P['text_dim']}; font-size:0.82rem; margin-top:12px;">
+            Target: <b style="color:{P['text']};">log returns</b> ·
+            Scaler fit on training window only ·
+            Forecast horizon: <b style="color:{P['text']};">{n_future} days</b>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -839,20 +899,51 @@ with tab3:
         y_train, y_test = y[:split_xy], y[split_xy:]
 
         # ============================================
-        #  TRAINING UI
+        #  TRAINING UI — ENHANCED
         # ============================================
-        st.markdown('<div class="sec">🧠 Training</div>', unsafe_allow_html=True)
+        st.markdown('<div class="sec">🧠 Training in progress</div>',
+                    unsafe_allow_html=True)
 
-        progress_bar = st.progress(0, text="Preparing...")
+        # Live progress bar
+        progress_bar = st.progress(0, text="Initializing model...")
 
-        mrow = st.columns(4)
+        # 5 live metric cards
+        mrow = st.columns(5)
         m_epoch = mrow[0].empty()
         m_train = mrow[1].empty()
         m_val = mrow[2].empty()
         m_gap = mrow[3].empty()
+        m_eta = mrow[4].empty()
 
-        live_chart_ph = st.empty()
+        # Two live charts side by side
+        chart_row = st.columns(2)
+        loss_chart_ph = chart_row[0].empty()
+        pred_chart_ph = chart_row[1].empty()
 
+        # Rotating tip
+        tip_ph = st.empty()
+
+        # Training state
+        state = {
+            "train": [], "val": [], "times": [],
+            "best_val": float("inf"), "best_epoch": 0,
+            "start_time": _time.time()
+        }
+
+        TIPS = [
+            "💡 <b>Log returns</b> are stationary — a much easier target than raw prices.",
+            "💡 The <b>forget gate</b> decides what old info to discard from memory.",
+            "💡 <b>Early stopping</b> saves the best weights when validation stops improving.",
+            "💡 Stock prices behave close to a <b>random walk</b> — beating the naive baseline is genuinely hard.",
+            "💡 <b>Directional accuracy</b> matters more than RMSE for trading.",
+            "💡 The <b>MinMaxScaler</b> is fit on training data only to prevent leakage.",
+            "💡 A <b>60-day lookback</b> ≈ 3 months of context for each prediction.",
+            "💡 <b>Dropout</b> randomly disables neurons during training to prevent overfitting.",
+            "💡 The <b>cell state</b> is the LSTM's memory highway — info flows without vanishing.",
+            "💡 Markets are <b>noisy</b>: even the best models only edge above 50% on direction.",
+        ]
+
+        # Model
         model = Sequential([
             Input(shape=(lookback, 1)),
             LSTM(units),
@@ -865,60 +956,168 @@ with tab3:
         es = EarlyStopping(monitor='val_loss', patience=patience,
                            restore_best_weights=True)
 
-        train_losses, val_losses = [], []
+        # How often to recompute predictions (in epochs)
+        pred_every = max(1, epochs // 12)
+
+        # Reusable card template
+        def metric_card(lbl, val, color=None):
+            c = f' style="color:{color};"' if color else ''
+            return (f'<div class="stat"><div class="lbl">{lbl}</div>'
+                    f'<div class="val"{c}>{val}</div></div>')
 
         class LiveCB(tf.keras.callbacks.Callback):
-            def on_epoch_end(self, epoch, logs=None):
-                train_losses.append(logs.get('loss', 0))
-                val_losses.append(logs.get('val_loss', 0))
+            def on_epoch_begin(self, epoch, logs=None):
+                self._t0 = _time.time()
 
+            def on_epoch_end(self, epoch, logs=None):
+                dt = _time.time() - self._t0
+                state["times"].append(dt)
+                state["train"].append(logs.get("loss", 0))
+                state["val"].append(logs.get("val_loss", 0))
+
+                val = logs.get("val_loss", 0)
+                if val < state["best_val"]:
+                    state["best_val"] = val
+                    state["best_epoch"] = epoch + 1
+
+                # Progress + ETA
                 pct = min((epoch + 1) / epochs, 1.0)
+                mean_t = float(np.mean(state["times"]))
+                remaining = max(0, epochs - epoch - 1)
+                eta_s = mean_t * remaining
+                elapsed = _time.time() - state["start_time"]
+
                 progress_bar.progress(
                     pct,
-                    text=f"Epoch {epoch + 1} of {epochs}  ·  "
-                         f"progress {pct * 100:.0f}%")
+                    text=(f"Epoch {epoch + 1} of {epochs}  ·  "
+                          f"{pct * 100:.0f}%  ·  "
+                          f"elapsed {elapsed:.0f}s  ·  "
+                          f"ETA {eta_s:.0f}s")
+                )
 
+                # Update the 5 metric cards
                 m_epoch.markdown(
-                    f'<div class="stat"><div class="lbl">Epoch</div>'
-                    f'<div class="val">{epoch + 1}</div></div>',
-                    unsafe_allow_html=True)
+                    metric_card("Epoch", f"{epoch + 1}/{epochs}",
+                                P['text']), unsafe_allow_html=True)
                 m_train.markdown(
-                    f'<div class="stat"><div class="lbl">Train loss</div>'
-                    f'<div class="val" style="color:{P["accent"]}">'
-                    f'{logs.get("loss", 0):.5f}</div></div>',
-                    unsafe_allow_html=True)
+                    metric_card("Train loss",
+                                f"{logs.get('loss', 0):.5f}",
+                                P['accent']), unsafe_allow_html=True)
                 m_val.markdown(
-                    f'<div class="stat"><div class="lbl">Val loss</div>'
-                    f'<div class="val" style="color:{P["good"]}">'
-                    f'{logs.get("val_loss", 0):.5f}</div></div>',
-                    unsafe_allow_html=True)
+                    metric_card("Val loss",
+                                f"{logs.get('val_loss', 0):.5f}",
+                                P['good']), unsafe_allow_html=True)
                 gap = logs.get("val_loss", 0) - logs.get("loss", 0)
                 gc = P['good'] if gap >= 0 else P['bad']
                 m_gap.markdown(
-                    f'<div class="stat"><div class="lbl">Gap (val−train)</div>'
-                    f'<div class="val" style="color:{gc}">{gap:+.5f}</div></div>',
+                    metric_card("Gap (val − train)", f"{gap:+.5f}", gc),
+                    unsafe_allow_html=True)
+                m_eta.markdown(
+                    metric_card("ETA",
+                                f"{eta_s:.0f}s" if eta_s > 0 else "done"),
                     unsafe_allow_html=True)
 
+                # Loss chart (updates every epoch)
                 lc = go.Figure()
                 lc.add_trace(go.Scatter(
-                    y=train_losses, name='Train',
-                    mode='lines+markers',
+                    y=state["train"], name="Train",
+                    mode="lines+markers",
                     line=dict(color=P['accent'], width=2),
-                    marker=dict(size=5)))
+                    marker=dict(size=4)))
                 lc.add_trace(go.Scatter(
-                    y=val_losses, name='Validation',
-                    mode='lines+markers',
+                    y=state["val"], name="Validation",
+                    mode="lines+markers",
                     line=dict(color=P['good'], width=2),
-                    marker=dict(size=5)))
-                lc.update_layout(**chart_layout(height=260, show_legend=True))
+                    marker=dict(size=4)))
+                # Highlight best epoch
+                if state["best_epoch"] > 0:
+                    be = state["best_epoch"] - 1
+                    lc.add_trace(go.Scatter(
+                        x=[be], y=[state["val"][be]],
+                        mode="markers",
+                        marker=dict(color=P['warn'], size=14,
+                                    symbol="star",
+                                    line=dict(color=P['chart_bg'], width=1.5)),
+                        name=f"Best ({state['best_val']:.5f})",
+                        hovertemplate=(f"<b>Best epoch</b>: {state['best_epoch']}"
+                                       f"<br>Val loss: {state['best_val']:.5f}"
+                                       f"<extra></extra>")))
+                lc.update_layout(**chart_layout(height=280,
+                                                title="Live loss curves",
+                                                show_legend=True))
                 lc.update_layout(
-                    legend=dict(orientation='h', y=1.15, x=1,
-                                xanchor='right', bgcolor='rgba(0,0,0,0)'))
+                    legend=dict(orientation="h", y=1.18, x=1,
+                                xanchor="right",
+                                bgcolor="rgba(0,0,0,0)"),
+                    margin=dict(l=40, r=20, t=40, b=30))
                 lc.update_xaxes(title="Epoch")
-                lc.update_yaxes(title="MSE Loss")
-                live_chart_ph.plotly_chart(lc, use_container_width=True,
-                                          key=f"live_{epoch}")
+                lc.update_yaxes(title="MSE loss")
+                loss_chart_ph.plotly_chart(lc, use_container_width=True,
+                                          key=f"live_loss_{epoch}")
 
+                # Live predictions (every N epochs, and at end)
+                if (epoch + 1) % pred_every == 0 or epoch == epochs - 1:
+                    try:
+                        ps = model.predict(X_test, verbose=0)
+                        pr = scaler.inverse_transform(ps).flatten()
+                        ar_ = scaler.inverse_transform(
+                            y_test.reshape(-1, 1)).flatten()
+                        prev_test_ = close_prices[split_row:-1, 0]
+                        ap = prev_test_ * np.exp(ar_)
+                        pp = prev_test_ * np.exp(pr)
+                        test_dates_ = data.index[split_row:split_row + len(ap)]
+
+                        # Downsample for speed
+                        step = max(1, len(ap) // 400)
+                        pc = go.Figure()
+                        pc.add_trace(go.Scatter(
+                            x=test_dates_[::step], y=ap[::step],
+                            mode="lines", name="Actual",
+                            line=dict(color=P['accent'], width=1.6)))
+                        pc.add_trace(go.Scatter(
+                            x=test_dates_[::step], y=pp[::step],
+                            mode="lines", name="Predicted",
+                            line=dict(color=P['warn'], width=1.6,
+                                      dash="dot")))
+
+                        # Live directional accuracy
+                        if len(ap) > 1:
+                            da = np.mean(
+                                np.sign(np.diff(ap)) == np.sign(np.diff(pp))
+                            ) * 100
+                        else:
+                            da = 0
+
+                        pc.update_layout(**chart_layout(
+                            height=280,
+                            title=f"Live predictions · dir. acc {da:.1f}%",
+                            show_legend=True))
+                        pc.update_layout(
+                            hovermode="x unified",
+                            legend=dict(orientation="h", y=1.18, x=1,
+                                        xanchor="right",
+                                        bgcolor="rgba(0,0,0,0)"),
+                            margin=dict(l=40, r=20, t=40, b=30))
+                        pc.update_xaxes(title="Date")
+                        pc.update_yaxes(title="Price ($)")
+                        pred_chart_ph.plotly_chart(
+                            pc, use_container_width=True,
+                            key=f"live_pred_{epoch}")
+                    except Exception:
+                        pass
+
+                # Rotating tip (changes every 3 epochs)
+                tip_ph.markdown(f"""
+                <div style="background:{P['surface']};
+                            border-left:3px solid {P['accent']};
+                            padding:10px 16px; border-radius:6px;
+                            color:{P['text_dim']}; font-size:0.85rem;
+                            margin-top:8px;">
+                    {TIPS[(epoch // 3) % len(TIPS)]}
+                </div>
+                """, unsafe_allow_html=True)
+
+        # ---- Run training ----
         hist = model.fit(
             X_train, y_train,
             epochs=epochs, batch_size=batch,
@@ -926,10 +1125,15 @@ with tab3:
             callbacks=[es, LiveCB()],
             verbose=0)
 
-        progress_bar.progress(1.0, text=f"✅ Done — {len(train_losses)} epochs")
+        total_time = _time.time() - state["start_time"]
+        progress_bar.progress(
+            1.0,
+            text=f"✅ Training complete — {len(state['train'])} epochs "
+                 f"in {total_time:.1f}s")
+        tip_ph.empty()
 
         # ============================================
-        #  EVALUATION
+        #  EVALUATION (same as before)
         # ============================================
         ps = model.predict(X_test, verbose=0)
         pr = scaler.inverse_transform(ps).flatten()
