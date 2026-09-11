@@ -1,9 +1,8 @@
 streamlit==1.40.0
 yfinance==0.2.54
-curl_cffi==0.7.4
 pandas==2.2.3
 numpy==1.26.4
 plotly==5.24.1
 tensorflow-cpu==2.16.2
 scikit-learn==1.5.2
-stocknews==0.0.8
+requests
